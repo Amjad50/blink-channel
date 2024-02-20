@@ -302,11 +302,6 @@ pub fn channel<T: Clone, const N: usize>() -> (Sender<T, N>, Receiver<T, N>) {
 mod tests {
     use super::*;
 
-    #[cfg(loom)]
-    use loom::thread;
-    #[cfg(not(loom))]
-    use std::thread;
-
     macro_rules! loom {
         ($b:block) => {
             #[cfg(loom)]
@@ -479,7 +474,7 @@ mod tests {
         let mut receivers = Vec::new();
         for _ in 0..4 {
             let mut receiver = receiver.clone();
-            receivers.push(thread::spawn(move || {
+            receivers.push(std::thread::spawn(move || {
                 let mut sum = 0;
                 for _ in 0..40 {
                     sum += receiver.recv().unwrap();
@@ -497,8 +492,6 @@ mod tests {
 #[cfg(all(test, not(loom)))]
 mod bench {
     use super::*;
-
-    use std::thread;
 
     extern crate test;
     use test::Bencher;
@@ -545,14 +538,14 @@ mod bench {
             let sender = sender.clone();
             let mut receiver = receiver.clone();
 
-            let sender_thread = thread::spawn(move || {
+            let sender_thread = std::thread::spawn(move || {
                 sender.send(1);
                 sender.send(2);
                 sender.send(3);
                 sender.send(4);
             });
 
-            let recv_thread = thread::spawn(move || {
+            let recv_thread = std::thread::spawn(move || {
                 receiver.recv();
                 receiver.recv();
                 receiver.recv();
