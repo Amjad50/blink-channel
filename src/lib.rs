@@ -1,5 +1,5 @@
 #![cfg_attr(not(test), no_std)]
-#![cfg_attr(test, feature(test))]
+#![cfg_attr(all(test, feature = "unstable"), feature(test))]
 
 extern crate alloc;
 use alloc::{boxed::Box, vec::Vec};
@@ -489,7 +489,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, not(loom)))]
+#[cfg(all(test, not(loom), feature = "unstable"))]
 mod bench {
     use super::*;
 

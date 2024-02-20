@@ -10,5 +10,8 @@ repository = "https://github.com/Amjad50/blink-channel.git"
 keywords = ["channel", "broadcast", "mpmc", "lock-free", "no_std"]
 categories = ["concurrency", "no-std"]
 
+[features]
+unstable = []
+
 [target.'cfg(loom)'.dependencies]
 loom = "0.7"
