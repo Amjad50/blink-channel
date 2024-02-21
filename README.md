@@ -1,9 +1,9 @@
-# Blink-channel
+# blinkcast
 
-[![check](https://github.com/Amjad50/blink-channel/actions/workflows/check.yml/badge.svg)](https://github.com/Amjad50/blink-channel/actions/workflows/check.yml) 
-[![codecov](https://codecov.io/gh/Amjad50/blink-channel/graph/badge.svg?token=I4ORM3HHCK)](https://codecov.io/gh/Amjad50/blink-channel)
-[![Crates.io blink-channel](https://img.shields.io/crates/v/blink-channel)](https://crates.io/crates/blink-channel)
-[![docs.rs blink-channel](https://docs.rs/blink-channel/badge.svg)](https://docs.rs/blink-channel)
+[![check](https://github.com/Amjad50/blinkcast/actions/workflows/check.yml/badge.svg)](https://github.com/Amjad50/blinkcast/actions/workflows/check.yml) 
+[![codecov](https://codecov.io/gh/Amjad50/blinkcast/graph/badge.svg?token=I4ORM3HHCK)](https://codecov.io/gh/Amjad50/blinkcast)
+[![Crates.io blinkcast](https://img.shields.io/crates/v/blinkcast)](https://crates.io/crates/blinkcast)
+[![docs.rs blinkcast](https://docs.rs/blinkcast/badge.svg)](https://docs.rs/blinkcast)
 
 Fast, Lock-free, Bounded, Lossy `no_std` Rust broadcast channel.
 
@@ -12,7 +12,7 @@ Fast, Lock-free, Bounded, Lossy `no_std` Rust broadcast channel.
 This is implemented with ring buffer and atomic operations, which provide us with lock-free behavior with
 no extra dependencies.
 
-The API of the `blink-channel` is similar to that of the `std::sync::mpsc` channels.
+The API of the `blinkcast` is similar to that of the `std::sync::mpsc` channels.
 However, there are some differences:
 
 - It allows for multiple consumers (receivers) and multiple prodocuers (senders).
@@ -26,7 +26,7 @@ than old data which can be discarded.
 This could be useful for example in implementing audio driver, where a small glitch but staying
 up to date is better than delayed audio.
 
-See [the documentation](https://docs.rs/blink-channel) for examples.
+See [the documentation](https://docs.rs/blinkcast) for examples.
 
 # Minimum Supported Rust Version (MSRV)
 The minimum supported Rust version for this crate is `1.60.0`

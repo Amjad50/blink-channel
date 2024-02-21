@@ -2,7 +2,7 @@
 //! This is implemented with ring buffer and atomic operations, which provide us with lock-free behavior with
 //! no extra dependencies.
 //!
-//! The API of the `blink-channel` is similar to that of the [`std::sync::mpsc`](https://doc.rust-lang.org/std/sync/mpsc/) channels.
+//! The API of the `blinkcast` is similar to that of the [`std::sync::mpsc`](https://doc.rust-lang.org/std/sync/mpsc/) channels.
 //! However, there are some differences:
 //!
 //! - It allows for multiple consumers (receivers) and multiple prodocuers (senders).
@@ -16,14 +16,14 @@
 //! The original object will remain in the buffer until its overwritten, at that point it will be dropped.
 //! Thus be careful if the value is a large allocation for example big `Arc`. One of the clones (original) will
 //! be kept by the buffer and will result in a delayed deallocation if that was not expected by the user.
-//! See [issue #1](https://github.com/Amjad50/blink-channel/issues/1)
+//! See [issue #1](https://github.com/Amjad50/blinkcast/issues/1)
 //!
 //! # Example
 //! Single sender multiple receivers
 //! ```
 //! # #[cfg(loom)]
 //! # loom::model(|| {
-//! use blink_channel::channel;
+//! use blinkcast::channel;
 //!
 //! let (sender, mut receiver1) = channel::<i32, 4>();
 //! sender.send(1);
@@ -44,7 +44,7 @@
 //! ```
 //! # #[cfg(loom)]
 //! # loom::model(|| {
-//! use blink_channel::channel;
+//! use blinkcast::channel;
 //! use std::thread;
 //! let (sender1, mut receiver1) = channel::<i32, 100>();
 //! let sender2 = sender1.clone();
@@ -320,7 +320,7 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
 /// ```
 /// # #[cfg(loom)]
 /// # loom::model(|| {
-/// use blink_channel::channel;
+/// use blinkcast::channel;
 ///
 /// let (sender, mut receiver) = channel::<i32, 4>();
 ///
@@ -364,7 +364,7 @@ impl<T, const N: usize> Clone for Sender<T, N> {
 /// ```
 /// # #[cfg(loom)]
 /// # loom::model(|| {
-/// use blink_channel::channel;
+/// use blinkcast::channel;
 /// let (sender, mut receiver) = channel::<i32, 4>();
 /// sender.send(1);
 /// assert_eq!(receiver.recv(), Some(1));
@@ -413,7 +413,7 @@ impl<T: Clone, const N: usize> Clone for Receiver<T, N> {
 /// ```
 /// # #[cfg(loom)]
 /// # loom::model(|| {
-/// use blink_channel::channel;
+/// use blinkcast::channel;
 /// let (sender, mut receiver) = channel::<i32, 4>();
 ///
 /// sender.send(1);

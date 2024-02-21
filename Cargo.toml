@@ -1,12 +1,12 @@
 [package]
-name = "blink-channel"
+name = "blinkcast"
 version = "0.1.0"
 edition = "2021"
 authors = ["Amjad Alsharafi <me@amjad.alsharafi.dev>"]
 license = "MIT"
 readme = "README.md"
 description = "Fast, lock-free, bounded, multiple-producer, multiple-consumer, lossy, broadcast channel"
-repository = "https://github.com/Amjad50/blink-channel.git"
+repository = "https://github.com/Amjad50/blinkcast.git"
 keywords = ["channel", "broadcast", "mpmc", "lock-free", "no_std"]
 categories = ["concurrency", "no-std"]
 rust-version = "1.60.0"
