@@ -4,7 +4,7 @@
 extern crate alloc;
 use alloc::{boxed::Box, vec::Vec};
 
-use core::{cell::UnsafeCell, cmp, fmt, mem::MaybeUninit};
+use core::{cell::UnsafeCell, cmp, mem::MaybeUninit};
 
 #[cfg(loom)]
 use loom::sync::{
@@ -39,13 +39,6 @@ fn is_readable(state: usize) -> bool {
 struct Node<T> {
     data: UnsafeCell<MaybeUninit<T>>,
     state: AtomicUsize,
-}
-
-impl<T> fmt::Debug for Node<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let state = self.state.load(Ordering::Relaxed);
-        write!(f, "Node {{ state: {} }}", state)
-    }
 }
 
 impl<T> Default for Node<T> {
