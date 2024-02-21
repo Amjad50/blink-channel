@@ -1,4 +1,4 @@
-//! Fast, Lock-free, Bounded, Lossy broadcast channel.
+//! Fast, Lock-free, Bounded, Lossy `no_std` broadcast channel.
 //! This is implemented with ring buffer and atomic operations, which provide us with lock-free behavior with
 //! no extra dependencies.
 //!

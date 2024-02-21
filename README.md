@@ -5,7 +5,7 @@
 [![Crates.io blink-channel](https://img.shields.io/crates/v/blink-channel)](https://crates.io/crates/blink-channel)
 [![docs.rs blink-channel](https://docs.rs/blink-channel/badge.svg)](https://docs.rs/blink-channel)
 
-Fast, Lock-free, Bounded, Lossy Rust broadcast channel.
+Fast, Lock-free, Bounded, Lossy `no_std` Rust broadcast channel.
 
 > Sometimes it may spin the CPU for a bit if there is a contention on a single element in the buffer for write and read operations. Could happen more often for small buffers.
 
