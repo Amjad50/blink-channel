@@ -1,3 +1,84 @@
+//! Fast, Lock-free, Bounded, Lossy broadcast channel.
+//! This is implemented with ring buffer and atomic operations, which provide us with lock-free behavior with
+//! no extra dependencies.
+//!
+//! The API of the `blink-channel` is similar to that of the [`std::sync::mpsc`](https://doc.rust-lang.org/std/sync/mpsc/) channels.
+//! However, there are some differences:
+//!
+//! - It allows for multiple consumers (receivers) and multiple prodocuers (senders).
+//! - The channel broadcasts every send to every consumer.
+//! - Lossy, the sender will overwrite old data, so receivers must be quick or they will lose the old data (don'
+//! t blink).
+//! - Implemented for `no_std` environments.
+//!
+//! The data sent must implment `Clone`, because it will be kept in the buffer, and readers can read it multiple times.
+//!
+//! The original object will remain in the buffer until its overwritten, at that point it will be dropped.
+//! Thus be careful if the value is a large allocation for example big `Arc`. One of the clones (original) will
+//! be kept by the buffer and will result in a delayed deallocation if that was not expected by the user.
+//! See [issue #1](https://github.com/Amjad50/blink-channel/issues/1)
+//!
+//! # Example
+//! Single sender multiple receivers
+//! ```
+//! # #[cfg(loom)]
+//! # loom::model(|| {
+//! use blink_channel::channel;
+//!
+//! let (sender, mut receiver1) = channel::<i32, 4>();
+//! sender.send(1);
+//! sender.send(2);
+//!
+//! let mut receiver2 = receiver1.clone();
+//!
+//! assert_eq!(receiver1.recv(), Some(1));
+//! assert_eq!(receiver1.recv(), Some(2));
+//! assert_eq!(receiver1.recv(), None);
+//!
+//! assert_eq!(receiver2.recv(), Some(1));
+//! assert_eq!(receiver2.recv(), Some(2));
+//! assert_eq!(receiver2.recv(), None);
+//! # });
+//! ```
+//! Multiple senders multiple receivers
+//! ```
+//! # #[cfg(loom)]
+//! # loom::model(|| {
+//! use blink_channel::channel;
+//! use std::thread;
+//! let (sender1, mut receiver1) = channel::<i32, 100>();
+//! let sender2 = sender1.clone();
+//!
+//! let t1 = thread::spawn(move || {
+//!     for i in 0..50 {
+//!         sender1.send(i);
+//!     }
+//! });
+//! let t2 = thread::spawn(move || {
+//!     for i in 0..50 {
+//!         sender2.send(i);
+//!     }
+//! });
+//!
+//! t1.join().unwrap();
+//! t2.join().unwrap();
+//!
+//! let mut receiver2 = receiver1.clone();
+//!
+//! let mut sum1 = 0;
+//! let mut sum2 = 0;
+//! for i in 0..100 {
+//!    let v1 = receiver1.recv().unwrap();
+//!    let v2 = receiver2.recv().unwrap();
+//!    sum1 += v1;
+//!    sum2 += v2;
+//!    assert_eq!(v1, v2);
+//! }
+//! assert_eq!(sum1, 49 * 50);
+//! assert_eq!(sum2, 49 * 50);
+//! # });
+//! ```
+
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 
@@ -228,11 +309,37 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
     }
 }
 
+/// The sender of the [`channel`].
+///
+/// This is a cloneable sender, so you can have multiple senders that will send to the same
+/// channel.
+///
+/// Broadcast messages sent by using the [`send`](Sender::send) method.
+///
+/// # Examples
+/// ```
+/// # #[cfg(loom)]
+/// # loom::model(|| {
+/// use blink_channel::channel;
+///
+/// let (sender, mut receiver) = channel::<i32, 4>();
+///
+/// sender.send(1);
+/// let sender2 = sender.clone();
+/// sender2.send(2);
+///
+/// assert_eq!(receiver.recv(), Some(1));
+/// assert_eq!(receiver.recv(), Some(2));
+/// assert_eq!(receiver.recv(), None);
+/// # });
 pub struct Sender<T, const N: usize> {
     queue: Arc<InnerChannel<T, N>>,
 }
 
 impl<T: Clone, const N: usize> Sender<T, N> {
+    /// Sends a message to the channel.
+    /// If the channel is full, the oldest message will be overwritten.
+    /// So the receiver must be quick or it will lose the old data.
     pub fn send(&self, value: T) {
         self.queue.push(value);
     }
@@ -246,12 +353,44 @@ impl<T, const N: usize> Clone for Sender<T, N> {
     }
 }
 
+/// The receiver of the [`channel`].
+///
+/// This is a cloneable receiver, so you can have multiple receivers that start from the same
+/// point.
+///
+/// Broadcast messages sent by the channel are received by the [`recv`](Receiver::recv) method.
+///
+/// # Examples
+/// ```
+/// # #[cfg(loom)]
+/// # loom::model(|| {
+/// use blink_channel::channel;
+/// let (sender, mut receiver) = channel::<i32, 4>();
+/// sender.send(1);
+/// assert_eq!(receiver.recv(), Some(1));
+///
+/// sender.send(2);
+/// sender.send(3);
+///
+/// assert_eq!(receiver.recv(), Some(2));
+///
+/// // clone the receiver
+/// let mut receiver2 = receiver.clone();
+/// assert_eq!(receiver.recv(), Some(3));
+/// assert_eq!(receiver2.recv(), Some(3));
+/// assert_eq!(receiver.recv(), None);
+/// assert_eq!(receiver2.recv(), None);
+/// # });
+/// ```
 pub struct Receiver<T, const N: usize> {
     queue: Arc<InnerChannel<T, N>>,
     reader: ReaderData,
 }
 
 impl<T: Clone, const N: usize> Receiver<T, N> {
+    /// Receives a message from the channel.
+    ///
+    /// If there is no message available, this method will return `None`.
     pub fn recv(&mut self) -> Option<T> {
         self.queue.pop(&mut self.reader)
     }
@@ -266,6 +405,34 @@ impl<T: Clone, const N: usize> Clone for Receiver<T, N> {
     }
 }
 
+/// Creates a new channel, returning the [`Sender`] and [`Receiver`] for it.
+///
+/// Both of the sender and receiver are cloneable, so you can have multiple senders and receivers.
+///
+/// # Examples
+/// ```
+/// # #[cfg(loom)]
+/// # loom::model(|| {
+/// use blink_channel::channel;
+/// let (sender, mut receiver) = channel::<i32, 4>();
+///
+/// sender.send(1);
+/// sender.send(2);
+///
+/// assert_eq!(receiver.recv(), Some(1));
+///
+/// let sender2 = sender.clone();
+/// sender2.send(3);
+///
+/// assert_eq!(receiver.recv(), Some(2));
+///
+/// let mut receiver2 = receiver.clone();
+/// assert_eq!(receiver.recv(), Some(3));
+/// assert_eq!(receiver2.recv(), Some(3));
+/// assert_eq!(receiver.recv(), None);
+/// assert_eq!(receiver2.recv(), None);
+/// # });
+/// ```
 pub fn channel<T: Clone, const N: usize>() -> (Sender<T, N>, Receiver<T, N>) {
     let queue = Arc::new(InnerChannel::<T, N>::new());
     (

@@ -11,5 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial implementation of the library.
 - Tests and benches.
+- Documentation.
 
 [unreleased]: https://github.com/Amjad50/blink-channel/compare/a9761ca3c16404ffd8c00efe0ed26fa377bb444d...HEAD
