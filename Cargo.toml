@@ -9,6 +9,7 @@ description = "Fast, lock-free, bounded, multiple-producer, multiple-consumer, l
 repository = "https://github.com/Amjad50/blink-channel.git"
 keywords = ["channel", "broadcast", "mpmc", "lock-free", "no_std"]
 categories = ["concurrency", "no-std"]
+rust-version = "1.60.0"
 
 [features]
 unstable = []
