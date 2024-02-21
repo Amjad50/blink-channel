@@ -1,6 +1,9 @@
 # Blink-channel
 
-[![check](https://github.com/Amjad50/blink-channel/actions/workflows/check.yml/badge.svg)](https://github.com/Amjad50/blink-channel/actions/workflows/check.yml) [![codecov](https://codecov.io/gh/Amjad50/blink-channel/graph/badge.svg?token=I4ORM3HHCK)](https://codecov.io/gh/Amjad50/blink-channel)
+[![check](https://github.com/Amjad50/blink-channel/actions/workflows/check.yml/badge.svg)](https://github.com/Amjad50/blink-channel/actions/workflows/check.yml) 
+[![codecov](https://codecov.io/gh/Amjad50/blink-channel/graph/badge.svg?token=I4ORM3HHCK)](https://codecov.io/gh/Amjad50/blink-channel)
+[![Crates.io blink-channel](https://img.shields.io/crates/v/blink-channel)](https://crates.io/crates/blink-channel)
+[![docs.rs blink-channel](https://docs.rs/blink-channel/badge.svg)](https://docs.rs/blink-channel)
 
 Fast, Lock-free, Bounded, Lossy Rust broadcast channel.
 
@@ -22,6 +25,8 @@ Due to that nature, this is useful in applications where data comes in very quic
 than old data which can be discarded. 
 This could be useful for example in implementing audio driver, where a small glitch but staying
 up to date is better than delayed audio.
+
+See [the documentation](https://docs.rs/blink-channel) for examples.
 
 # Minimum Supported Rust Version (MSRV)
 The minimum supported Rust version for this crate is `1.60.0`
