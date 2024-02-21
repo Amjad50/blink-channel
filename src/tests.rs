@@ -168,19 +168,61 @@ fn test_overflow() {
 }
 
 #[test]
+// FIXME: spin panic on loom
+#[cfg(not(loom))]
 fn test_always_overflow() {
-    loom!({
-        let (sender, mut receiver) = channel::<i32, 4>();
+    let (sender, mut receiver) = channel::<i32, 4>();
 
-        for i in 0..100 {
+    for i in 0..100 {
+        sender.send(i);
+    }
+
+    for i in 100 - 4..100 {
+        assert_eq!(receiver.recv(), Some(i));
+    }
+    assert_eq!(receiver.recv(), None);
+}
+
+#[test]
+// FIXME: spin panic on loom
+#[cfg(not(loom))]
+fn test_sender_receiver_conflict() {
+    let (sender, receiver) = channel::<i32, 4>();
+
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+
+    for _ in 0..10000 {
+        // setup
+        // fill the channel
+        for i in 0..4 {
             sender.send(i);
         }
 
-        for i in 100 - 4..100 {
-            assert_eq!(receiver.recv(), Some(i));
+        // send and receive exactly at the same time
+        let s_handle;
+        let r_handle;
+        {
+            let barrier = barrier.clone();
+            let mut receiver = receiver.clone();
+            r_handle = std::thread::spawn(move || {
+                barrier.wait();
+                let v = receiver.recv();
+                assert!(v == Some(0) || v == Some(1), "v = {v:?}");
+            });
         }
-        assert_eq!(receiver.recv(), None);
-    });
+        {
+            let barrier = barrier.clone();
+            let sender = sender.clone();
+            s_handle = std::thread::spawn(move || {
+                barrier.wait();
+                sender.send(5);
+            });
+        }
+
+        // wait for the threads to finish
+        s_handle.join().unwrap();
+        r_handle.join().unwrap();
+    }
 }
 
 #[test]

@@ -88,7 +88,11 @@ mod tests;
 extern crate alloc;
 use alloc::{boxed::Box, vec::Vec};
 
-use core::{cell::UnsafeCell, cmp, mem::MaybeUninit};
+use core::{
+    cell::{Cell, UnsafeCell},
+    cmp,
+    mem::MaybeUninit,
+};
 
 #[cfg(loom)]
 use loom::sync::{
@@ -123,6 +127,7 @@ fn is_readable(state: usize) -> bool {
 struct Node<T> {
     data: UnsafeCell<MaybeUninit<T>>,
     state: AtomicUsize,
+    lap: Cell<usize>,
 }
 
 impl<T> Default for Node<T> {
@@ -130,6 +135,7 @@ impl<T> Default for Node<T> {
         Self {
             data: UnsafeCell::new(MaybeUninit::uninit()),
             state: AtomicUsize::new(STATE_EMPTY),
+            lap: Cell::new(0),
         }
     }
 }
@@ -186,6 +192,7 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
             }
         }
 
+        let current_lap = self.producer_lap.load(Ordering::Relaxed);
         if next_head == 0 {
             self.producer_lap.fetch_add(1, Ordering::Release);
         }
@@ -234,6 +241,7 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
         unsafe {
             node.data.get().write(MaybeUninit::new(value));
         }
+        node.lap.set(current_lap);
 
         // publish the value
         node.state.store(STATE_AVAILABLE, Ordering::Release);
@@ -297,6 +305,14 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
                 STATE_EMPTY => unreachable!("There should be some data at least"),
                 s => unreachable!("Invalid state: {}", s),
             }
+        }
+
+        // if the node contain a different lap number, then the writer
+        // has overwritten the data and finished writing before we got the lock
+        // retry the whole thing (slow)
+        if node.lap.get() != reader.lap {
+            node.state.fetch_sub(STATE_READING, Ordering::Release);
+            return self.pop(reader);
         }
 
         let data = unsafe { node.data.get().read().assume_init_ref().clone() };
