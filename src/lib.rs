@@ -339,7 +339,32 @@ mod tests {
     }
 
     #[test]
-    fn test_clone() {
+    fn test_clone_send() {
+        loom!({
+            let (sender, mut receiver) = channel::<i32, 6>();
+
+            sender.send(1);
+            sender.send(2);
+            sender.send(3);
+            sender.send(4);
+
+            let sender2 = sender.clone();
+
+            sender2.send(5);
+            sender2.send(6);
+
+            assert_eq!(receiver.recv(), Some(1));
+            assert_eq!(receiver.recv(), Some(2));
+            assert_eq!(receiver.recv(), Some(3));
+            assert_eq!(receiver.recv(), Some(4));
+            assert_eq!(receiver.recv(), Some(5));
+            assert_eq!(receiver.recv(), Some(6));
+            assert_eq!(receiver.recv(), None);
+        });
+    }
+
+    #[test]
+    fn test_clone_recv() {
         loom!({
             let (sender, mut receiver) = channel::<i32, 4>();
 
@@ -438,6 +463,52 @@ mod tests {
                 assert_eq!(receiver.recv(), Some(i));
             }
             assert_eq!(receiver.recv(), None);
+        });
+    }
+
+    #[test]
+    fn test_drop() {
+        loom!({
+            #[cfg(not(loom))]
+            static COUNTER: AtomicUsize = AtomicUsize::new(0);
+            #[cfg(loom)]
+            // loom doesn't support `const-fn` atomics
+            loom::lazy_static! {
+                static ref COUNTER: AtomicUsize = AtomicUsize::new(0);
+            }
+
+            #[derive(Clone, Eq, PartialEq, Debug)]
+            struct DropCount;
+            impl Drop for DropCount {
+                fn drop(&mut self) {
+                    COUNTER.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+
+            let (sender, mut receiver) = channel::<DropCount, 4>();
+
+            sender.send(DropCount);
+            sender.send(DropCount);
+            sender.send(DropCount);
+            sender.send(DropCount);
+
+            assert_eq!(COUNTER.load(Ordering::Relaxed), 0);
+
+            // overflowing will drop the oldest value
+            sender.send(DropCount);
+            assert_eq!(COUNTER.load(Ordering::Relaxed), 1);
+            sender.send(DropCount);
+            assert_eq!(COUNTER.load(Ordering::Relaxed), 2);
+
+            // receiving won't drop the original value, but the clone will be dropped normally when leaving the scope
+            // we are taking the values here so that it won't be dropped until we finish this test
+            let _v1 = receiver.recv().unwrap();
+            let _v2 = receiver.recv().unwrap();
+            let _v3 = receiver.recv().unwrap();
+            let _v4 = receiver.recv().unwrap();
+            assert_eq!(receiver.recv(), None);
+            // no change
+            assert_eq!(COUNTER.load(Ordering::Relaxed), 2);
         });
     }
 
