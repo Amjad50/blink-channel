@@ -92,12 +92,11 @@ use core::{
     cell::{Cell, UnsafeCell},
     cmp,
     mem::MaybeUninit,
-    sync::atomic::AtomicU64,
 };
 
 #[cfg(loom)]
 use loom::sync::{
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicU64, AtomicUsize, Ordering},
     Arc,
 };
 
@@ -105,6 +104,15 @@ use loom::sync::{
 use alloc::sync::Arc;
 #[cfg(not(loom))]
 use core::sync::atomic::{AtomicUsize, Ordering};
+
+// choose 64 for targets that support it, otherwise 32
+#[cfg(target_pointer_width = "64")]
+const LAP_SHIFT: u8 = 32;
+#[cfg(target_pointer_width = "32")]
+const LAP_SHIFT: u8 = 16;
+
+const INDEX_MASK: usize = (1 << LAP_SHIFT) - 1;
+const MAX_LEN: usize = INDEX_MASK;
 
 const STATE_EMPTY: usize = 0;
 const STATE_AVAILABLE: usize = 1;
@@ -118,16 +126,16 @@ const READING_MASK: usize = usize::MAX & !(STATE_READING - 1);
 // extracts the lap and index
 // top 32bits are the lap
 // bottom 32bits are the index
-const fn unpack_data_index(index: u64) -> (usize, usize) {
-    let lap = (index >> 32) as usize;
-    let index = (index & 0xFFFFFFFF) as usize;
+const fn unpack_data_index(index: usize) -> (usize, usize) {
+    let lap = index >> LAP_SHIFT;
+    let index = index & INDEX_MASK;
     (lap, index)
 }
 
-const fn pack_data_index(lap: usize, index: usize) -> u64 {
-    debug_assert!(lap < (1 << 32));
-    debug_assert!(index < (1 << 32));
-    ((lap as u64) << 32) | ((index & 0xFFFFFFFF) as u64)
+const fn pack_data_index(lap: usize, index: usize) -> usize {
+    debug_assert!(lap < (1 << LAP_SHIFT));
+    debug_assert!(index < (1 << LAP_SHIFT));
+    (lap << LAP_SHIFT) | (index & INDEX_MASK)
 }
 
 #[inline]
@@ -164,7 +172,7 @@ struct ReaderData {
 
 struct InnerChannel<T, const N: usize> {
     buffer: Box<[Node<T>]>,
-    head: AtomicU64,
+    head: AtomicUsize,
 }
 
 impl<T: Clone, const N: usize> InnerChannel<T, N> {
@@ -176,7 +184,7 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
         let buffer = buffer.into_boxed_slice();
         Self {
             buffer,
-            head: AtomicU64::new(0),
+            head: AtomicUsize::new(0),
         }
     }
 
