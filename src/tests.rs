@@ -1,5 +1,8 @@
 use super::{alloc as alloc_impl, AtomicUsize, Ordering, MAX_LEN};
 
+#[cfg(not(loom))]
+use super::static_mem;
+
 extern crate alloc;
 #[cfg(not(loom))]
 use alloc::sync::Arc;
@@ -41,6 +44,56 @@ fn test_push_pop() {
         assert_eq!(receiver.recv(), Some(4));
         assert_eq!(receiver.recv(), None);
     });
+}
+
+#[test]
+#[cfg(not(loom))]
+fn test_push_pop_static() {
+    let sender = static_mem::Sender::<i32, 4>::default();
+    let mut receiver = sender.new_receiver();
+
+    sender.send(1);
+    sender.send(2);
+    sender.send(3);
+    sender.send(4);
+
+    assert_eq!(receiver.recv(), Some(1));
+    assert_eq!(receiver.recv(), Some(2));
+    assert_eq!(receiver.recv(), Some(3));
+    assert_eq!(receiver.recv(), Some(4));
+    assert_eq!(receiver.recv(), None);
+}
+
+#[test]
+#[cfg(not(loom))]
+fn test_push_pop_static_receiver_middle() {
+    let sender = static_mem::Sender::<i32, 4>::default();
+    let mut receiver = sender.new_receiver();
+
+    sender.send(1);
+    sender.send(2);
+    // will read data read by the receiver
+    let mut receiver2 = receiver.clone();
+    // will start reading from the next data
+    let mut receiver3 = sender.new_receiver();
+    sender.send(3);
+    sender.send(4);
+
+    assert_eq!(receiver.recv(), Some(1));
+    assert_eq!(receiver.recv(), Some(2));
+    assert_eq!(receiver.recv(), Some(3));
+    assert_eq!(receiver.recv(), Some(4));
+    assert_eq!(receiver.recv(), None);
+
+    assert_eq!(receiver2.recv(), Some(1));
+    assert_eq!(receiver2.recv(), Some(2));
+    assert_eq!(receiver2.recv(), Some(3));
+    assert_eq!(receiver2.recv(), Some(4));
+    assert_eq!(receiver2.recv(), None);
+
+    assert_eq!(receiver3.recv(), Some(3));
+    assert_eq!(receiver3.recv(), Some(4));
+    assert_eq!(receiver3.recv(), None);
 }
 
 #[test]
@@ -326,6 +379,35 @@ fn stress_test() {
     for _ in 0..4 {
         for i in 0..10 {
             sender.send(i);
+        }
+    }
+
+    let mut receivers = Vec::new();
+    for _ in 0..4 {
+        let mut receiver = receiver.clone();
+        receivers.push(std::thread::spawn(move || {
+            let mut sum = 0;
+            for _ in 0..40 {
+                sum += receiver.recv().unwrap();
+            }
+            assert_eq!(sum, 45 * 4);
+        }));
+    }
+
+    for receiver in receivers {
+        receiver.join().unwrap();
+    }
+}
+
+#[test]
+#[cfg(not(loom))]
+fn stress_test_static_mem() {
+    static SENDER: static_mem::Sender<i32, 40> = static_mem::Sender::<i32, 40>::new();
+    let receiver = SENDER.new_receiver();
+
+    for _ in 0..4 {
+        for i in 0..10 {
+            SENDER.send(i);
         }
     }
 
