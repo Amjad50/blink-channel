@@ -12,6 +12,11 @@ categories = ["concurrency", "no-std"]
 rust-version = "1.60.0"
 
 [features]
+default = ["alloc"]
+
+alloc = []
+# This is used only for testing using `bench`, as it requires nightly
+# doesn't provide any extra functionality
 unstable = []
 
 [target.'cfg(loom)'.dependencies]
