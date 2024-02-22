@@ -23,7 +23,7 @@
 //! # #[cfg(not(loom))]
 //! # {
 //! use blinkcast::alloc::channel;
-//! let (sender, mut receiver) = channel::<i32, 4>();
+//! let (sender, mut receiver) = channel::<i32>(4);
 //! sender.send(1);
 //! assert_eq!(receiver.recv(), Some(1));
 //!
@@ -51,15 +51,17 @@ use alloc::sync::Arc;
 #[cfg(loom)]
 use loom::sync::Arc;
 
-struct InnerChannel<T, const N: usize> {
+struct InnerChannel<T> {
     buffer: Box<[Node<T>]>,
     head: AtomicUsize,
 }
 
-impl<T: Clone, const N: usize> InnerChannel<T, N> {
-    fn new() -> Self {
-        let mut buffer = Vec::with_capacity(N);
-        for _ in 0..N {
+impl<T: Clone> InnerChannel<T> {
+    fn new(size: usize) -> Self {
+        assert!(size <= MAX_LEN, "Exceeded the maximum length");
+
+        let mut buffer = Vec::with_capacity(size);
+        for _ in 0..size {
             buffer.push(Default::default());
         }
         let buffer = buffer.into_boxed_slice();
@@ -91,7 +93,7 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
 /// # {
 /// use blinkcast::alloc::channel;
 ///
-/// let (sender, mut receiver) = channel::<i32, 4>();
+/// let (sender, mut receiver) = channel::<i32>(4);
 ///
 /// sender.send(1);
 /// let sender2 = sender.clone();
@@ -108,7 +110,7 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
 /// # {
 /// use blinkcast::alloc::Sender;
 ///
-/// let sender = Sender::<i32, 4>::new();
+/// let sender = Sender::<i32>::new(4);
 ///
 /// let mut receiver = sender.new_receiver();
 ///
@@ -119,14 +121,14 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
 /// assert_eq!(receiver.recv(), None);
 /// # }
 /// ```
-pub struct Sender<T, const N: usize> {
-    queue: Arc<InnerChannel<T, N>>,
+pub struct Sender<T> {
+    queue: Arc<InnerChannel<T>>,
 }
 
-unsafe impl<T: Clone + Send, const N: usize> Send for Sender<T, N> {}
-unsafe impl<T: Clone + Send, const N: usize> Sync for Sender<T, N> {}
+unsafe impl<T: Clone + Send> Send for Sender<T> {}
+unsafe impl<T: Clone + Send> Sync for Sender<T> {}
 
-impl<T: Clone, const N: usize> Sender<T, N> {
+impl<T: Clone> Sender<T> {
     /// Sends a message to the channel.
     /// If the channel is full, the oldest message will be overwritten.
     /// So the receiver must be quick or it will lose the old data.
@@ -136,12 +138,9 @@ impl<T: Clone, const N: usize> Sender<T, N> {
 
     /// Creates a new channel with a buffer of size `N`.
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        // TODO: use const_assert to check if N is a power of 2
-        assert!(N <= MAX_LEN, "Exceeded the maximum length");
-
+    pub fn new(size: usize) -> Self {
         Self {
-            queue: Arc::new(InnerChannel::<T, N>::new()),
+            queue: Arc::new(InnerChannel::<T>::new(size)),
         }
     }
 
@@ -153,7 +152,7 @@ impl<T: Clone, const N: usize> Sender<T, N> {
     /// # {
     /// use blinkcast::alloc::Sender;
     ///
-    /// let sender = Sender::<i32, 4>::new();
+    /// let sender = Sender::<i32>::new(4);
     ///
     /// sender.send(1);
     ///
@@ -165,7 +164,7 @@ impl<T: Clone, const N: usize> Sender<T, N> {
     /// assert_eq!(receiver.recv(), None);
     /// # }
     /// ```
-    pub fn new_receiver(&self) -> Receiver<T, N> {
+    pub fn new_receiver(&self) -> Receiver<T> {
         let head = self.queue.head.load(Ordering::Relaxed);
         let (lap, index) = unpack_data_index(head);
 
@@ -176,7 +175,7 @@ impl<T: Clone, const N: usize> Sender<T, N> {
     }
 }
 
-impl<T, const N: usize> Clone for Sender<T, N> {
+impl<T> Clone for Sender<T> {
     fn clone(&self) -> Self {
         Self {
             queue: self.queue.clone(),
@@ -198,7 +197,7 @@ impl<T, const N: usize> Clone for Sender<T, N> {
 /// # #[cfg(not(loom))]
 /// # {
 /// use blinkcast::alloc::channel;
-/// let (sender, mut receiver) = channel::<i32, 4>();
+/// let (sender, mut receiver) = channel::<i32>(4);
 /// sender.send(1);
 /// assert_eq!(receiver.recv(), Some(1));
 ///
@@ -215,15 +214,15 @@ impl<T, const N: usize> Clone for Sender<T, N> {
 /// assert_eq!(receiver2.recv(), None);
 /// # }
 /// ```
-pub struct Receiver<T, const N: usize> {
-    queue: Arc<InnerChannel<T, N>>,
+pub struct Receiver<T> {
+    queue: Arc<InnerChannel<T>>,
     reader: ReaderData,
 }
 
-unsafe impl<T: Clone + Send, const N: usize> Send for Receiver<T, N> {}
-unsafe impl<T: Clone + Send, const N: usize> Sync for Receiver<T, N> {}
+unsafe impl<T: Clone + Send> Send for Receiver<T> {}
+unsafe impl<T: Clone + Send> Sync for Receiver<T> {}
 
-impl<T: Clone, const N: usize> Receiver<T, N> {
+impl<T: Clone> Receiver<T> {
     /// Receives a message from the channel.
     ///
     /// If there is no message available, this method will return `None`.
@@ -232,7 +231,7 @@ impl<T: Clone, const N: usize> Receiver<T, N> {
     }
 }
 
-impl<T: Clone, const N: usize> Clone for Receiver<T, N> {
+impl<T: Clone> Clone for Receiver<T> {
     fn clone(&self) -> Self {
         Self {
             queue: self.queue.clone(),
@@ -252,7 +251,7 @@ impl<T: Clone, const N: usize> Clone for Receiver<T, N> {
 /// # #[cfg(not(loom))]
 /// # {
 /// use blinkcast::alloc::channel;
-/// let (sender, mut receiver) = channel::<i32, 4>();
+/// let (sender, mut receiver) = channel::<i32>(4);
 ///
 /// sender.send(1);
 /// sender.send(2);
@@ -271,8 +270,8 @@ impl<T: Clone, const N: usize> Clone for Receiver<T, N> {
 /// assert_eq!(receiver2.recv(), None);
 /// # }
 /// ```
-pub fn channel<T: Clone, const N: usize>() -> (Sender<T, N>, Receiver<T, N>) {
-    let sender = Sender::<T, N>::new();
+pub fn channel<T: Clone>(size: usize) -> (Sender<T>, Receiver<T>) {
+    let sender = Sender::<T>::new(size);
     let receiver = sender.new_receiver();
     (sender, receiver)
 }

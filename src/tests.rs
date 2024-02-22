@@ -21,14 +21,14 @@ macro_rules! loom {
 #[should_panic]
 fn test_channel_too_large() {
     loom!({
-        let _ = alloc_impl::channel::<i32, { MAX_LEN + 1 }>();
+        let _ = alloc_impl::channel::<i32>(MAX_LEN + 1);
     });
 }
 
 #[test]
 fn test_push_pop() {
     loom!({
-        let (sender, mut receiver) = alloc_impl::channel::<i32, 4>();
+        let (sender, mut receiver) = alloc_impl::channel::<i32>(4);
 
         sender.send(1);
         sender.send(2);
@@ -46,7 +46,7 @@ fn test_push_pop() {
 #[test]
 fn test_more_push_pop() {
     loom!({
-        let (sender, mut receiver) = alloc_impl::channel::<i32, 4>();
+        let (sender, mut receiver) = alloc_impl::channel::<i32>(4);
 
         sender.send(1);
         sender.send(2);
@@ -70,7 +70,7 @@ fn test_more_push_pop() {
 #[test]
 fn test_clone_send() {
     loom!({
-        let (sender, mut receiver) = alloc_impl::channel::<i32, 6>();
+        let (sender, mut receiver) = alloc_impl::channel::<i32>(6);
 
         sender.send(1);
         sender.send(2);
@@ -95,7 +95,7 @@ fn test_clone_send() {
 #[test]
 fn test_clone_recv() {
     loom!({
-        let (sender, mut receiver) = alloc_impl::channel::<i32, 4>();
+        let (sender, mut receiver) = alloc_impl::channel::<i32>(4);
 
         sender.send(1);
         sender.send(2);
@@ -120,7 +120,7 @@ fn test_clone_recv() {
 #[test]
 fn test_middle_clone() {
     loom!({
-        let (sender, mut receiver) = alloc_impl::channel::<i32, 4>();
+        let (sender, mut receiver) = alloc_impl::channel::<i32>(4);
 
         sender.send(1);
         sender.send(2);
@@ -151,7 +151,7 @@ fn test_middle_clone() {
 #[test]
 fn test_overflow() {
     loom!({
-        let (sender, mut receiver) = alloc_impl::channel::<i32, 4>();
+        let (sender, mut receiver) = alloc_impl::channel::<i32>(4);
 
         sender.send(1);
         sender.send(2);
@@ -183,7 +183,7 @@ fn test_overflow() {
 // FIXME: spin panic on loom
 #[cfg(not(loom))]
 fn test_always_overflow() {
-    let (sender, mut receiver) = alloc_impl::channel::<i32, 4>();
+    let (sender, mut receiver) = alloc_impl::channel::<i32>(4);
 
     for i in 0..100 {
         sender.send(i);
@@ -199,7 +199,7 @@ fn test_always_overflow() {
 // FIXME: spin panic on loom
 #[cfg(not(loom))]
 fn test_sender_receiver_conflict() {
-    let (sender, receiver) = alloc_impl::channel::<i32, 4>();
+    let (sender, receiver) = alloc_impl::channel::<i32>(4);
 
     let barrier = Arc::new(std::sync::Barrier::new(2));
 
@@ -241,7 +241,7 @@ fn test_sender_receiver_conflict() {
 // FIXME: too long on loom
 #[cfg(not(loom))]
 fn test_multiple_sender_conflict() {
-    let (sender, mut receiver) = alloc_impl::channel::<i32, 4>();
+    let (sender, mut receiver) = alloc_impl::channel::<i32>(4);
 
     let barrier = Arc::new(std::sync::Barrier::new(8));
 
@@ -291,7 +291,7 @@ fn test_drop() {
             }
         }
 
-        let (sender, mut receiver) = alloc_impl::channel::<DropCount, 4>();
+        let (sender, mut receiver) = alloc_impl::channel::<DropCount>(4);
 
         sender.send(DropCount);
         sender.send(DropCount);
@@ -321,7 +321,7 @@ fn test_drop() {
 #[test]
 #[cfg(not(loom))]
 fn stress_test() {
-    let (sender, receiver) = alloc_impl::channel::<i32, 40>();
+    let (sender, receiver) = alloc_impl::channel::<i32>(40);
 
     for _ in 0..4 {
         for i in 0..10 {
@@ -355,7 +355,7 @@ mod bench {
 
     #[bench]
     fn bench_push_pop(b: &mut Bencher) {
-        let (sender, mut receiver) = alloc_impl::channel::<i32, 4>();
+        let (sender, mut receiver) = alloc_impl::channel::<i32>(4);
 
         b.iter(|| {
             sender.send(1);
@@ -389,7 +389,7 @@ mod bench {
 
     #[bench]
     fn bench_push_pop_threaded(b: &mut Bencher) {
-        let (sender, receiver) = alloc_impl::channel::<i32, 4>();
+        let (sender, receiver) = alloc_impl::channel::<i32>(4);
 
         b.iter(|| {
             let sender = sender.clone();
@@ -416,7 +416,7 @@ mod bench {
 
     #[bench]
     fn bench_overflow(b: &mut Bencher) {
-        let (sender, mut receiver) = alloc_impl::channel::<i32, 4>();
+        let (sender, mut receiver) = alloc_impl::channel::<i32>(4);
 
         b.iter(|| {
             sender.send(1);
@@ -447,7 +447,7 @@ mod bench {
 
     #[bench]
     fn bench_always_overflow(b: &mut Bencher) {
-        let (sender, mut receiver) = alloc_impl::channel::<i32, 4>();
+        let (sender, mut receiver) = alloc_impl::channel::<i32>(4);
 
         b.iter(|| {
             for i in 0..50 {

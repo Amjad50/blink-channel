@@ -27,7 +27,7 @@
 //! # {
 //! use blinkcast::alloc::channel;
 //!
-//! let (sender, mut receiver1) = channel::<i32, 4>();
+//! let (sender, mut receiver1) = channel::<i32>(4);
 //! sender.send(1);
 //! sender.send(2);
 //!
@@ -48,7 +48,7 @@
 //! # {
 //! use blinkcast::alloc::channel;
 //! use std::thread;
-//! let (sender1, mut receiver1) = channel::<i32, 100>();
+//! let (sender1, mut receiver1) = channel::<i32>(100);
 //! let sender2 = sender1.clone();
 //!
 //! let t1 = thread::spawn(move || {
