@@ -109,7 +109,9 @@ const LAP_SHIFT: u8 = 32;
 const LAP_SHIFT: u8 = 16;
 
 const INDEX_MASK: usize = (1 << LAP_SHIFT) - 1;
-const MAX_LEN: usize = INDEX_MASK;
+/// The maximum length of the buffer allowed on this platform
+/// It will be `2^16 - 1` on 32bit platforms and `2^32 - 1` on 64bit platforms
+pub const MAX_LEN: usize = INDEX_MASK;
 
 const STATE_EMPTY: usize = 0;
 const STATE_AVAILABLE: usize = 1;
@@ -149,6 +151,16 @@ struct Node<T> {
     data: UnsafeCell<MaybeUninit<T>>,
     state: AtomicUsize,
     lap: Cell<usize>,
+}
+
+impl<T> Node<T> {
+    pub const fn empty() -> Self {
+        Self {
+            data: UnsafeCell::new(MaybeUninit::uninit()),
+            state: AtomicUsize::new(STATE_EMPTY),
+            lap: Cell::new(0),
+        }
+    }
 }
 
 impl<T> Default for Node<T> {

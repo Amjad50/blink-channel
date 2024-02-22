@@ -1,5 +1,7 @@
 //! A channel implemented with static memory.
 
+use core::mem::ManuallyDrop;
+
 use crate::{
     core_impl, unpack_data_index, AtomicUsize, MaybeUninit, Node, Ordering, ReaderData, MAX_LEN,
 };
@@ -10,22 +12,34 @@ struct InnerChannel<T, const N: usize> {
 }
 
 impl<T: Clone + Sized, const N: usize> InnerChannel<T, N> {
-    fn new() -> Self {
+    const fn new() -> Self {
         // Create an uninitialized array of `MaybeUninit`. The `assume_init` is
         // safe because the type we are claiming to have initialized here is a
         // bunch of `MaybeUninit`s, which do not require initialization
         let mut uninit_buffer: [MaybeUninit<Node<T>>; N] =
             unsafe { MaybeUninit::uninit().assume_init() };
 
-        for data in uninit_buffer.iter_mut() {
-            data.write(Node::default());
+        let mut i = 0;
+        while i < N {
+            uninit_buffer[i] = MaybeUninit::new(Node::<T>::empty());
+            i += 1;
         }
 
         // Safety: we have initialized all the elements
         // This transmute_copy will copy again, not sure if it can be optimized by the compiler
         // but this is still an open issue (transmute doesn't work): https://github.com/rust-lang/rust/issues/61956
         // or use `MaybeUninit::array_assume_init` when it is stabilized
-        let buffer = unsafe { core::mem::transmute_copy::<_, [Node<T>; N]>(&uninit_buffer) };
+        #[repr(C)]
+        union InitializedData<T, const N: usize> {
+            uninit: ManuallyDrop<[MaybeUninit<Node<T>>; N]>,
+            init: ManuallyDrop<[Node<T>; N]>,
+        }
+        let buffer = ManuallyDrop::into_inner(unsafe {
+            InitializedData {
+                uninit: ManuallyDrop::new(uninit_buffer),
+            }
+            .init
+        });
 
         Self {
             buffer,
@@ -88,13 +102,9 @@ impl<T: Clone, const N: usize> Sender<T, N> {
 
 impl<T: Clone, const N: usize> Sender<T, N> {
     /// Creates a new channel with a buffer of size `N`.
-    pub fn new() -> Self {
-        // TODO: replace with compile time assert
-        assert!(
-            N <= MAX_LEN,
-            "The buffer size must be less than {}",
-            MAX_LEN
-        );
+    pub const fn new() -> Self {
+        // TODO: use const_assert to check if N is a power of 2
+        assert!(N <= MAX_LEN, "Exceeded the maximum length");
 
         Self {
             queue: InnerChannel::<T, N>::new(),
