@@ -5,12 +5,14 @@
 [![Crates.io blinkcast](https://img.shields.io/crates/v/blinkcast)](https://crates.io/crates/blinkcast)
 [![docs.rs blinkcast](https://docs.rs/blinkcast/badge.svg)](https://docs.rs/blinkcast)
 
-Fast, Lock-free, Bounded, Lossy `no_std` Rust broadcast channel.
+Fast, Bounded, Lossy Rust broadcast channel with support for `no_std` targets.
 
 > Sometimes it may spin the CPU for a bit if there is a contention on a single element in the buffer for write and read operations. Could happen more often for small buffers.
 
-This is implemented with ring buffer and atomic operations, which provide us with lock-free behavior with
-no extra dependencies.
+This is implemented with ring buffer and atomic operations, it may be considered lock-free, as we
+don't use `Lock` premitive, but the implementation may spin waiting for a contending
+writer/reader to finish accessing a specific node. Its very rare, but
+maybe I won't call it `lock-free` in the strict sense.
 
 The API of the `blinkcast` is similar to that of the `std::sync::mpsc` channels.
 However, there are some differences:

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2024-02-22
+
+### Fixed
+- Race conditions on send (write) and receive (read) operations.
+
 ## [0.1.0] - 2024-02-21
 
 ### Added
@@ -15,5 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tests and benches.
 - Documentation.
 
-[unreleased]: https://github.com/Amjad50/blinkcast/compare/v0.1.0...HEAD
+[unreleased]: https://github.com/Amjad50/blinkcast/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Amjad50/blinkcast/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Amjad50/blinkcast/compare/a9761ca3c16404ffd8c00efe0ed26fa377bb444d...v0.1.0

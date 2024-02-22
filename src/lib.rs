@@ -1,6 +1,8 @@
-//! Fast, Lock-free, Bounded, Lossy `no_std` broadcast channel.
-//! This is implemented with ring buffer and atomic operations, which provide us with lock-free behavior with
-//! no extra dependencies.
+//! Fast, Bounded, Lossy broadcast channel with `no_std` support.
+//! This is implemented with ring buffer and atomic operations, it may be considered lock-free,
+//! as we don't use `Lock` premitive, but the implementation may spin waiting for a contending
+//! writer/reader to finish accessing a specific node. Its very rare, but
+//! maybe I won't call it `lock-free` in the strict sense.
 //!
 //! The API of the `blinkcast` is similar to that of the [`std::sync::mpsc`](https://doc.rust-lang.org/std/sync/mpsc/) channels.
 //! However, there are some differences:
