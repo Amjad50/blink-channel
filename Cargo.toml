@@ -9,7 +9,7 @@ description = "Fast, bounded, multiple-producer, multiple-consumer, lossy, broad
 repository = "https://github.com/Amjad50/blinkcast.git"
 keywords = ["channel", "broadcast", "mpmc", "no_std"]
 categories = ["concurrency", "no-std"]
-rust-version = "1.60.0"
+rust-version = "1.61.0"
 
 [features]
 default = ["alloc"]

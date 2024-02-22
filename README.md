@@ -31,7 +31,7 @@ up to date is better than delayed audio.
 See [the documentation](https://docs.rs/blinkcast) for examples.
 
 # Minimum Supported Rust Version (MSRV)
-The minimum supported Rust version for this crate is `1.60.0`
+The minimum supported Rust version for this crate is `1.61.0`
 
 # License
 Licensed under `MIT` ([LICENSE](./LICENSE) or http://opensource.org/licenses/MIT)

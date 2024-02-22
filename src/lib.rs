@@ -100,6 +100,10 @@ mod tests;
 #[cfg(feature = "alloc")]
 pub mod alloc;
 mod core_impl;
+#[cfg(not(loom))]
+// Atomics in `loom` don't support `const fn`, so it crashes when compiling
+// since, we don't need `static_mem` to be tested with `loom`, we can just
+// exclude it if we are building for `loom`
 pub mod static_mem;
 
 // choose 64 for targets that support it, otherwise 32
@@ -154,6 +158,10 @@ struct Node<T> {
 }
 
 impl<T> Node<T> {
+    #[cfg(not(loom))]
+    // Atomics in `loom` don't support `const fn`, so it crashes when compiling
+    // since, we don't need `static_mem` to be tested with `loom`, we can just
+    // exclude it if we are building for `loom`
     pub const fn empty() -> Self {
         Self {
             data: UnsafeCell::new(MaybeUninit::uninit()),
