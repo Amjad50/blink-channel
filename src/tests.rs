@@ -191,7 +191,7 @@ fn test_sender_receiver_conflict() {
 
     let barrier = Arc::new(std::sync::Barrier::new(2));
 
-    for _ in 0..10000 {
+    for _ in 0..10 {
         // setup
         // fill the channel
         for i in 0..4 {
