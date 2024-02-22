@@ -1,4 +1,25 @@
 //! A channel implemented with static memory.
+//!
+//! This module implements a broadcast channel with a fixed-size buffer, without allocation.
+//! The buffer (hosted by the [`Sender`]) is stored in static memory, it can be in the stack
+//! or in global static variables, and this can be done because [`Sender::new`] is a `const fn`.
+//!
+//! When sending, we only need `&Sender`, so it can be done from multiple threads/cores as the same time.
+//!
+//! The channel overwrites the oldest message if the buffer is full, prioritizing the latest data.
+//!
+//! **Key Features:**
+//!
+//! * **Broadcast:** Multiple senders can send messages to multiple receivers simultaneously.
+//! * **Fixed-size Buffer:** Provides bounded memory usage with predictable performance.
+//! * **Overwriting Behavior:** Prioritizes the latest data in scenarios where the buffer becomes full.
+//! * **Cloneable:** the `Receiver` are cloneable, enabling flexible message distribution patterns,
+//!    the `Sender` is not cloneable, but if setup in a global static variable, it can be used from multiple locations.
+//!
+//! **Usage Considerations:**
+//! * Well-suited for scenarios where multiple components need to broadcast messages and the latest data takes priority.
+//! * Ideal when heap allocation is necessary or desirable.
+//! * Receivers must be fast enough to keep up with the senders and avoid losing messages due to overwriting.
 
 use core::mem::ManuallyDrop;
 
@@ -62,7 +83,11 @@ impl<T: Clone + Sized, const N: usize> InnerChannel<T, N> {
 /// The `Sender` is the owner of the memory.
 /// You can use it from multiple locations by storing it in a `static` variable.
 ///
-/// Then, use [`new_receiver`](Sender::new_receiver) to create a receiver.
+/// `static_mem` doesn't have something like [`channel`](crate::alloc::channel) function,
+/// Because, we don't have heap to store the Sender and give you an [`Arc`](https://doc.rust-lang.org/std/sync/struct.Arc.html)
+/// to clone it. So, the user has to create the `receiver` from the `sender` manually.
+///
+/// Use [`new_receiver`](Sender::new_receiver) to create a receiver.
 /// It will start from the same point as the sender.
 ///
 /// Broadcast messages sent by using the [`send`](Sender::send) method.
@@ -98,9 +123,7 @@ impl<T: Clone, const N: usize> Sender<T, N> {
     pub fn send(&self, value: T) {
         self.queue.push(value);
     }
-}
 
-impl<T: Clone, const N: usize> Sender<T, N> {
     /// Creates a new channel with a buffer of size `N`.
     pub const fn new() -> Self {
         // TODO: use const_assert to check if N is a power of 2

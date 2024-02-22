@@ -80,6 +80,27 @@
 //! assert_eq!(sum2, 49 * 50);
 //! # }
 //! ```
+//! Another example using the [`static_mem`] module (no allocation)
+//! ```
+//! # #[cfg(not(loom))]
+//! # {
+//! use blinkcast::static_mem::Sender;
+//!
+//! let sender = Sender::<i32, 4>::new();
+//! let mut receiver1 = sender.new_receiver();
+//! sender.send(1);
+//! sender.send(2);
+//!
+//! let mut receiver2 = receiver1.clone();
+//!
+//! assert_eq!(receiver1.recv(), Some(1));
+//! assert_eq!(receiver1.recv(), Some(2));
+//! assert_eq!(receiver1.recv(), None);
+//!
+//! assert_eq!(receiver2.recv(), Some(1));
+//! assert_eq!(receiver2.recv(), Some(2));
+//! assert_eq!(receiver2.recv(), None);
+//! # }
 
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]

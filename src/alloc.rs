@@ -1,9 +1,50 @@
 //! A channel implemented with heap allocated buffers (require `alloc` feature).
+//!
+//! This module implements a broadcast channel with a fixed-size buffer, allocated
+//! in the heap. This means that multiple senders can be used without the need to use the same reference.
+//!
+//! The channel overwrites the oldest message if the buffer is full, prioritizing the latest data.
+//!
+//! **Key Features:**
+//!
+//! * **Broadcast:** Multiple senders can send messages to multiple receivers simultaneously.
+//! * **Heap-allocated Buffers:** Ensures data storage flexibility when the application requires it.
+//! * **Fixed-size Buffer:** Provides bounded memory usage with predictable performance.
+//! * **Overwriting Behavior:** Prioritizes the latest data in scenarios where the buffer becomes full.
+//! * **Cloneable:** Both `Sender` and `Receiver` are cloneable, enabling flexible message distribution patterns.
+//!
+//! **Usage Considerations:**
+//! * Well-suited for scenarios where multiple components need to broadcast messages and the latest data takes priority.
+//! * Ideal when heap allocation is necessary or desirable.
+//! * Receivers must be fast enough to keep up with the senders and avoid losing messages due to overwriting.
+//!
+//! # Examples
+//! ```
+//! # #[cfg(not(loom))]
+//! # {
+//! use blinkcast::alloc::channel;
+//! let (sender, mut receiver) = channel::<i32, 4>();
+//! sender.send(1);
+//! assert_eq!(receiver.recv(), Some(1));
+//!
+//! sender.send(2);
+//! sender.send(3);
+//!
+//! assert_eq!(receiver.recv(), Some(2));
+//!
+//! // clone the receiver
+//! let mut receiver2 = receiver.clone();
+//! assert_eq!(receiver.recv(), Some(3));
+//! assert_eq!(receiver2.recv(), Some(3));
+//! assert_eq!(receiver.recv(), None);
+//! assert_eq!(receiver2.recv(), None);
+//! # }
+//! ```
 
 extern crate alloc;
 use alloc::{boxed::Box, vec::Vec};
 
-use crate::{core_impl, AtomicUsize, Node, ReaderData, MAX_LEN};
+use crate::{core_impl, unpack_data_index, AtomicUsize, Node, Ordering, ReaderData, MAX_LEN};
 
 #[cfg(not(loom))]
 use alloc::sync::Arc;
@@ -61,6 +102,23 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
 /// assert_eq!(receiver.recv(), None);
 /// # }
 /// ```
+/// Or using the [`new`](Sender::new) method:
+/// ```
+/// # #[cfg(not(loom))]
+/// # {
+/// use blinkcast::alloc::Sender;
+///
+/// let sender = Sender::<i32, 4>::new();
+///
+/// let mut receiver = sender.new_receiver();
+///
+/// sender.send(1);
+/// sender.send(2);
+/// assert_eq!(receiver.recv(), Some(1));
+/// assert_eq!(receiver.recv(), Some(2));
+/// assert_eq!(receiver.recv(), None);
+/// # }
+/// ```
 pub struct Sender<T, const N: usize> {
     queue: Arc<InnerChannel<T, N>>,
 }
@@ -75,6 +133,47 @@ impl<T: Clone, const N: usize> Sender<T, N> {
     pub fn send(&self, value: T) {
         self.queue.push(value);
     }
+
+    /// Creates a new channel with a buffer of size `N`.
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        // TODO: use const_assert to check if N is a power of 2
+        assert!(N <= MAX_LEN, "Exceeded the maximum length");
+
+        Self {
+            queue: Arc::new(InnerChannel::<T, N>::new()),
+        }
+    }
+
+    /// Creates a new receiver that starts from the same point as the sender.
+    ///
+    /// # Examples
+    /// ```
+    /// # #[cfg(not(loom))]
+    /// # {
+    /// use blinkcast::alloc::Sender;
+    ///
+    /// let sender = Sender::<i32, 4>::new();
+    ///
+    /// sender.send(1);
+    ///
+    /// let mut receiver = sender.new_receiver();
+    /// assert_eq!(receiver.recv(), None);
+    ///
+    /// sender.send(2);
+    /// assert_eq!(receiver.recv(), Some(2));
+    /// assert_eq!(receiver.recv(), None);
+    /// # }
+    /// ```
+    pub fn new_receiver(&self) -> Receiver<T, N> {
+        let head = self.queue.head.load(Ordering::Relaxed);
+        let (lap, index) = unpack_data_index(head);
+
+        Receiver {
+            queue: self.queue.clone(),
+            reader: ReaderData { index, lap },
+        }
+    }
 }
 
 impl<T, const N: usize> Clone for Sender<T, N> {
@@ -86,6 +185,8 @@ impl<T, const N: usize> Clone for Sender<T, N> {
 }
 
 /// The receiver of the [`channel`].
+///
+/// Can also be created with the [`new_receiver`](Sender::new_receiver) method of the [`Sender`].
 ///
 /// This is a cloneable receiver, so you can have multiple receivers that start from the same
 /// point.
@@ -144,6 +245,8 @@ impl<T: Clone, const N: usize> Clone for Receiver<T, N> {
 ///
 /// Both of the sender and receiver are cloneable, so you can have multiple senders and receivers.
 ///
+/// Another method to create a channel is using the [`Sender::new`] and [`Sender::new_receiver`] methods.
+///
 /// # Examples
 /// ```
 /// # #[cfg(not(loom))]
@@ -169,21 +272,7 @@ impl<T: Clone, const N: usize> Clone for Receiver<T, N> {
 /// # }
 /// ```
 pub fn channel<T: Clone, const N: usize>() -> (Sender<T, N>, Receiver<T, N>) {
-    // TODO: replace with compile time assert
-    assert!(
-        N <= MAX_LEN,
-        "The buffer size must be less than {}",
-        MAX_LEN
-    );
-
-    let queue = Arc::new(InnerChannel::<T, N>::new());
-    (
-        Sender {
-            queue: queue.clone(),
-        },
-        Receiver {
-            queue,
-            reader: ReaderData { index: 0, lap: 0 },
-        },
-    )
+    let sender = Sender::<T, N>::new();
+    let receiver = sender.new_receiver();
+    (sender, receiver)
 }
