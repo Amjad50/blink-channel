@@ -14,6 +14,14 @@ macro_rules! loom {
 }
 
 #[test]
+#[should_panic]
+fn test_channel_too_large() {
+    loom!({
+        let _ = channel::<i32, { MAX_LEN + 1 }>();
+    });
+}
+
+#[test]
 fn test_push_pop() {
     loom!({
         let (sender, mut receiver) = channel::<i32, 4>();

@@ -96,7 +96,7 @@ use core::{
 
 #[cfg(loom)]
 use loom::sync::{
-    atomic::{AtomicU64, AtomicUsize, Ordering},
+    atomic::{AtomicUsize, Ordering},
     Arc,
 };
 
@@ -483,6 +483,13 @@ impl<T: Clone, const N: usize> Clone for Receiver<T, N> {
 /// # });
 /// ```
 pub fn channel<T: Clone, const N: usize>() -> (Sender<T, N>, Receiver<T, N>) {
+    // TODO: replace with compile time assert
+    assert!(
+        N <= MAX_LEN,
+        "The buffer size must be less than {}",
+        MAX_LEN
+    );
+
     let queue = Arc::new(InnerChannel::<T, N>::new());
     (
         Sender {
