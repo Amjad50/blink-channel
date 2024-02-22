@@ -195,7 +195,7 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
         let mut current_head = self.head.load(Ordering::Acquire);
 
         loop {
-            let (producer_lap, producer_index) = unpack_data_index(current_head);
+            let (mut producer_lap, mut producer_index) = unpack_data_index(current_head);
 
             node = &self.buffer[producer_index % self.buffer.len()];
 
@@ -226,7 +226,15 @@ impl<T: Clone, const N: usize> InnerChannel<T, N> {
                             break;
                         }
                     }
-                    STATE_WRITING => unreachable!("There should be no writer writing"),
+                    STATE_WRITING => {
+                        // move to next position
+                        producer_index += 1;
+                        if producer_index == 0 {
+                            producer_lap += 1;
+                        }
+                        current_head = pack_data_index(producer_lap, producer_index);
+                        node = &self.buffer[producer_index % self.buffer.len()];
+                    }
                     s => unreachable!("Invalid state: {}", s),
                 }
             }

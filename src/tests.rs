@@ -234,6 +234,41 @@ fn test_sender_receiver_conflict() {
 }
 
 #[test]
+// FIXME: too long on loom
+#[cfg(not(loom))]
+fn test_multiple_sender_conflict() {
+    let (sender, mut receiver) = channel::<i32, 4>();
+
+    let barrier = Arc::new(std::sync::Barrier::new(8));
+
+    for _ in 0..10 {
+        let mut senders = Vec::new();
+        for i in 0..8 {
+            let sender = sender.clone();
+            let barrier = barrier.clone();
+            senders.push(std::thread::spawn(move || {
+                barrier.wait();
+                sender.send(i);
+            }));
+        }
+
+        // wait for the senders to finish
+        for sender in senders {
+            sender.join().unwrap();
+        }
+
+        // read the data
+        let data = (0..4)
+            .map(|_| receiver.recv().unwrap())
+            .collect::<std::collections::HashSet<_>>();
+        assert!(receiver.recv().is_none());
+
+        // data should not contain duplicates
+        assert_eq!(data.len(), 4);
+    }
+}
+
+#[test]
 fn test_drop() {
     loom!({
         #[cfg(not(loom))]
