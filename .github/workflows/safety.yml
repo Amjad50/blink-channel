@@ -82,3 +82,4 @@ jobs:
         env:
           LOOM_MAX_PREEMPTIONS: 2
           RUSTFLAGS: "--cfg loom"
+          RUSTDOCFLAGS: "--cfg loom"

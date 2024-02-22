@@ -23,11 +23,11 @@
 //! # Example
 //! Single sender multiple receivers
 //! ```
-//! # #[cfg(loom)]
-//! # loom::model(|| {
-//! use blinkcast::channel;
+//! # #[cfg(not(loom))]
+//! # {
+//! use blinkcast::alloc::channel;
 //!
-//! let (sender, mut receiver1) = channel::<i32, 4>();
+//! let (sender, mut receiver1) = channel::<i32>(4);
 //! sender.send(1);
 //! sender.send(2);
 //!
@@ -40,15 +40,15 @@
 //! assert_eq!(receiver2.recv(), Some(1));
 //! assert_eq!(receiver2.recv(), Some(2));
 //! assert_eq!(receiver2.recv(), None);
-//! # });
+//! # }
 //! ```
 //! Multiple senders multiple receivers
 //! ```
-//! # #[cfg(loom)]
-//! # loom::model(|| {
-//! use blinkcast::channel;
+//! # #[cfg(not(loom))]
+//! # {
+//! use blinkcast::alloc::channel;
 //! use std::thread;
-//! let (sender1, mut receiver1) = channel::<i32, 100>();
+//! let (sender1, mut receiver1) = channel::<i32>(100);
 //! let sender2 = sender1.clone();
 //!
 //! let t1 = thread::spawn(move || {
@@ -78,34 +78,54 @@
 //! }
 //! assert_eq!(sum1, 49 * 50);
 //! assert_eq!(sum2, 49 * 50);
-//! # });
+//! # }
 //! ```
+//! Another example using the [`static_mem`] module (no allocation)
+//! ```
+//! # #[cfg(not(loom))]
+//! # {
+//! use blinkcast::static_mem::Sender;
+//!
+//! let sender = Sender::<i32, 4>::new();
+//! let mut receiver1 = sender.new_receiver();
+//! sender.send(1);
+//! sender.send(2);
+//!
+//! let mut receiver2 = receiver1.clone();
+//!
+//! assert_eq!(receiver1.recv(), Some(1));
+//! assert_eq!(receiver1.recv(), Some(2));
+//! assert_eq!(receiver1.recv(), None);
+//!
+//! assert_eq!(receiver2.recv(), Some(1));
+//! assert_eq!(receiver2.recv(), Some(2));
+//! assert_eq!(receiver2.recv(), None);
+//! # }
 
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 
-#[cfg(test)]
-mod tests;
-
-extern crate alloc;
-use alloc::{boxed::Box, vec::Vec};
-
 use core::{
     cell::{Cell, UnsafeCell},
-    cmp,
     mem::MaybeUninit,
 };
 
-#[cfg(loom)]
-use loom::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
-
-#[cfg(not(loom))]
-use alloc::sync::Arc;
 #[cfg(not(loom))]
 use core::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(loom)]
+use loom::sync::atomic::{AtomicUsize, Ordering};
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(feature = "alloc")]
+pub mod alloc;
+mod core_impl;
+#[cfg(not(loom))]
+// Atomics in `loom` don't support `const fn`, so it crashes when compiling
+// since, we don't need `static_mem` to be tested with `loom`, we can just
+// exclude it if we are building for `loom`
+pub mod static_mem;
 
 // choose 64 for targets that support it, otherwise 32
 #[cfg(target_pointer_width = "64")]
@@ -114,7 +134,9 @@ const LAP_SHIFT: u8 = 32;
 const LAP_SHIFT: u8 = 16;
 
 const INDEX_MASK: usize = (1 << LAP_SHIFT) - 1;
-const MAX_LEN: usize = INDEX_MASK;
+/// The maximum length of the buffer allowed on this platform
+/// It will be `2^16 - 1` on 32bit platforms and `2^32 - 1` on 64bit platforms
+pub const MAX_LEN: usize = INDEX_MASK;
 
 const STATE_EMPTY: usize = 0;
 const STATE_AVAILABLE: usize = 1;
@@ -156,6 +178,20 @@ struct Node<T> {
     lap: Cell<usize>,
 }
 
+impl<T> Node<T> {
+    #[cfg(not(loom))]
+    // Atomics in `loom` don't support `const fn`, so it crashes when compiling
+    // since, we don't need `static_mem` to be tested with `loom`, we can just
+    // exclude it if we are building for `loom`
+    pub const fn empty() -> Self {
+        Self {
+            data: UnsafeCell::new(MaybeUninit::uninit()),
+            state: AtomicUsize::new(STATE_EMPTY),
+            lap: Cell::new(0),
+        }
+    }
+}
+
 impl<T> Default for Node<T> {
     fn default() -> Self {
         Self {
@@ -170,344 +206,4 @@ impl<T> Default for Node<T> {
 struct ReaderData {
     index: usize,
     lap: usize,
-}
-
-struct InnerChannel<T, const N: usize> {
-    buffer: Box<[Node<T>]>,
-    head: AtomicUsize,
-}
-
-impl<T: Clone, const N: usize> InnerChannel<T, N> {
-    fn new() -> Self {
-        let mut buffer = Vec::with_capacity(N);
-        for _ in 0..N {
-            buffer.push(Default::default());
-        }
-        let buffer = buffer.into_boxed_slice();
-        Self {
-            buffer,
-            head: AtomicUsize::new(0),
-        }
-    }
-
-    fn push(&self, value: T) {
-        let mut node;
-        let mut should_drop;
-
-        let mut current_head = self.head.load(Ordering::Acquire);
-
-        loop {
-            let (mut producer_lap, mut producer_index) = unpack_data_index(current_head);
-
-            node = &self.buffer[producer_index % self.buffer.len()];
-
-            // acquire the node
-            let mut state;
-            loop {
-                state = node.state.load(Ordering::Acquire);
-
-                while is_reading(state) {
-                    core::hint::spin_loop();
-                    // wait until the reader is done
-                    state = node.state.load(Ordering::Acquire);
-                }
-
-                match state {
-                    STATE_EMPTY | STATE_AVAILABLE => {
-                        if node
-                            .state
-                            .compare_exchange_weak(
-                                state,
-                                STATE_WRITING,
-                                Ordering::AcqRel,
-                                Ordering::Relaxed,
-                            )
-                            .is_ok()
-                        {
-                            should_drop = state == STATE_AVAILABLE;
-                            break;
-                        }
-                    }
-                    STATE_WRITING => {
-                        // move to next position
-                        producer_index += 1;
-                        if producer_index == 0 {
-                            producer_lap += 1;
-                        }
-                        current_head = pack_data_index(producer_lap, producer_index);
-                        node = &self.buffer[producer_index % self.buffer.len()];
-                    }
-                    s => unreachable!("Invalid state: {}", s),
-                }
-            }
-
-            let next_index = (producer_index + 1) % self.buffer.len();
-            let next_lap = if next_index == 0 {
-                producer_lap + 1
-            } else {
-                producer_lap
-            };
-            let next_head = pack_data_index(next_lap, next_index);
-
-            match self.head.compare_exchange(
-                current_head,
-                next_head,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => {
-                    node.lap.set(producer_lap);
-                    break;
-                }
-                Err(x) => {
-                    current_head = x;
-                }
-            }
-            // rollback and try again
-            node.state.store(state, Ordering::Release);
-        }
-
-        if should_drop {
-            // Safety: we have exclusive access to the node
-            unsafe {
-                node.data.get().read().assume_init_drop();
-            }
-        }
-
-        // Safety: we have exclusive access to the node
-        unsafe {
-            node.data.get().write(MaybeUninit::new(value));
-        }
-        // release the node
-        node.state.store(STATE_AVAILABLE, Ordering::Release);
-    }
-
-    fn pop(&self, reader: &mut ReaderData) -> Option<T> {
-        let (producer_lap, producer_index) = unpack_data_index(self.head.load(Ordering::Acquire));
-        let mut reader_index = reader.index;
-        let reader_lap = reader.lap;
-
-        match reader_lap.cmp(&producer_lap) {
-            // the reader is before the writer
-            // so there must be something to read
-            cmp::Ordering::Less => {
-                let lap_diff = producer_lap - reader_lap;
-                let head_diff = producer_index as isize - reader_index as isize;
-
-                if (lap_diff > 0 && head_diff > 0) || lap_diff > 1 {
-                    // there is an overflow
-                    // we need to update the reader index
-                    // we will take the latest readable value, the furthest from the writer
-                    // and this is the value at [head, producer_lap - 1]
-                    let new_index = producer_index % self.buffer.len();
-                    reader_index = new_index;
-
-                    reader.lap = producer_lap - 1;
-                }
-            }
-            cmp::Ordering::Equal => {
-                if reader_index >= producer_index {
-                    return None;
-                }
-            }
-            cmp::Ordering::Greater => {
-                unreachable!("The reader is after the writer");
-            }
-        }
-        let mut node = &self.buffer[reader_index % self.buffer.len()];
-
-        // acquire the node
-        loop {
-            let state = node.state.load(Ordering::Acquire);
-
-            if is_readable(state) {
-                let old = node.state.fetch_add(STATE_READING, Ordering::AcqRel);
-
-                if is_readable(old) {
-                    break;
-                }
-                // something happened, rollback
-                node.state.fetch_sub(STATE_READING, Ordering::Release);
-                continue;
-            }
-
-            match state {
-                STATE_WRITING => {
-                    reader_index += 1;
-                    node = &self.buffer[reader_index % self.buffer.len()];
-                }
-                STATE_EMPTY => unreachable!("There should be some data at least"),
-                s => unreachable!("Invalid state: {}", s),
-            }
-        }
-
-        // if the node contain a different lap number, then the writer
-        // has overwritten the data and finished writing before we got the lock
-        // retry the whole thing (slow)
-        if node.lap.get() != reader.lap {
-            node.state.fetch_sub(STATE_READING, Ordering::Release);
-            return self.pop(reader);
-        }
-
-        let data = unsafe { node.data.get().read().assume_init_ref().clone() };
-
-        reader.index = (reader_index + 1) % self.buffer.len();
-        if reader.index == 0 {
-            reader.lap += 1;
-        }
-
-        node.state.fetch_sub(STATE_READING, Ordering::Release);
-
-        Some(data)
-    }
-}
-
-/// The sender of the [`channel`].
-///
-/// This is a cloneable sender, so you can have multiple senders that will send to the same
-/// channel.
-///
-/// Broadcast messages sent by using the [`send`](Sender::send) method.
-///
-/// # Examples
-/// ```
-/// # #[cfg(loom)]
-/// # loom::model(|| {
-/// use blinkcast::channel;
-///
-/// let (sender, mut receiver) = channel::<i32, 4>();
-///
-/// sender.send(1);
-/// let sender2 = sender.clone();
-/// sender2.send(2);
-///
-/// assert_eq!(receiver.recv(), Some(1));
-/// assert_eq!(receiver.recv(), Some(2));
-/// assert_eq!(receiver.recv(), None);
-/// # });
-pub struct Sender<T, const N: usize> {
-    queue: Arc<InnerChannel<T, N>>,
-}
-
-unsafe impl<T: Clone + Send, const N: usize> Send for Sender<T, N> {}
-unsafe impl<T: Clone + Send, const N: usize> Sync for Sender<T, N> {}
-
-impl<T: Clone, const N: usize> Sender<T, N> {
-    /// Sends a message to the channel.
-    /// If the channel is full, the oldest message will be overwritten.
-    /// So the receiver must be quick or it will lose the old data.
-    pub fn send(&self, value: T) {
-        self.queue.push(value);
-    }
-}
-
-impl<T, const N: usize> Clone for Sender<T, N> {
-    fn clone(&self) -> Self {
-        Self {
-            queue: self.queue.clone(),
-        }
-    }
-}
-
-/// The receiver of the [`channel`].
-///
-/// This is a cloneable receiver, so you can have multiple receivers that start from the same
-/// point.
-///
-/// Broadcast messages sent by the channel are received by the [`recv`](Receiver::recv) method.
-///
-/// # Examples
-/// ```
-/// # #[cfg(loom)]
-/// # loom::model(|| {
-/// use blinkcast::channel;
-/// let (sender, mut receiver) = channel::<i32, 4>();
-/// sender.send(1);
-/// assert_eq!(receiver.recv(), Some(1));
-///
-/// sender.send(2);
-/// sender.send(3);
-///
-/// assert_eq!(receiver.recv(), Some(2));
-///
-/// // clone the receiver
-/// let mut receiver2 = receiver.clone();
-/// assert_eq!(receiver.recv(), Some(3));
-/// assert_eq!(receiver2.recv(), Some(3));
-/// assert_eq!(receiver.recv(), None);
-/// assert_eq!(receiver2.recv(), None);
-/// # });
-/// ```
-pub struct Receiver<T, const N: usize> {
-    queue: Arc<InnerChannel<T, N>>,
-    reader: ReaderData,
-}
-
-unsafe impl<T: Clone + Send, const N: usize> Send for Receiver<T, N> {}
-unsafe impl<T: Clone + Send, const N: usize> Sync for Receiver<T, N> {}
-
-impl<T: Clone, const N: usize> Receiver<T, N> {
-    /// Receives a message from the channel.
-    ///
-    /// If there is no message available, this method will return `None`.
-    pub fn recv(&mut self) -> Option<T> {
-        self.queue.pop(&mut self.reader)
-    }
-}
-
-impl<T: Clone, const N: usize> Clone for Receiver<T, N> {
-    fn clone(&self) -> Self {
-        Self {
-            queue: self.queue.clone(),
-            reader: self.reader.clone(),
-        }
-    }
-}
-
-/// Creates a new channel, returning the [`Sender`] and [`Receiver`] for it.
-///
-/// Both of the sender and receiver are cloneable, so you can have multiple senders and receivers.
-///
-/// # Examples
-/// ```
-/// # #[cfg(loom)]
-/// # loom::model(|| {
-/// use blinkcast::channel;
-/// let (sender, mut receiver) = channel::<i32, 4>();
-///
-/// sender.send(1);
-/// sender.send(2);
-///
-/// assert_eq!(receiver.recv(), Some(1));
-///
-/// let sender2 = sender.clone();
-/// sender2.send(3);
-///
-/// assert_eq!(receiver.recv(), Some(2));
-///
-/// let mut receiver2 = receiver.clone();
-/// assert_eq!(receiver.recv(), Some(3));
-/// assert_eq!(receiver2.recv(), Some(3));
-/// assert_eq!(receiver.recv(), None);
-/// assert_eq!(receiver2.recv(), None);
-/// # });
-/// ```
-pub fn channel<T: Clone, const N: usize>() -> (Sender<T, N>, Receiver<T, N>) {
-    // TODO: replace with compile time assert
-    assert!(
-        N <= MAX_LEN,
-        "The buffer size must be less than {}",
-        MAX_LEN
-    );
-
-    let queue = Arc::new(InnerChannel::<T, N>::new());
-    (
-        Sender {
-            queue: queue.clone(),
-        },
-        Receiver {
-            queue,
-            reader: ReaderData { index: 0, lap: 0 },
-        },
-    )
 }
