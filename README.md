@@ -17,7 +17,7 @@ maybe I won't call it `lock-free` in the strict sense.
 The API of the `blinkcast` is similar to that of the `std::sync::mpsc` channels.
 However, there are some differences:
 
-- It allows for multiple consumers (receivers) and multiple prodocuers (senders).
+- It allows for multiple consumers (receivers) and multiple producers (senders).
 - The channel broadcasts every send to every consumer.
 - Lossy, the sender will overwrite old data, so receivers must be quick or they will lose the old data (don'
 t blink).
@@ -25,8 +25,10 @@ t blink).
 
 Due to that nature, this is useful in applications where data comes in very quick and new data is always more important
 than old data which can be discarded. 
-This could be useful for example in implementing audio driver, where a small glitch but staying
-up to date is better than delayed audio.
+This could be useful for example in implementing:
+- **audio driver** (small glitch but staying up to date is better than delayed audio).
+- **mouse/keyboard driver** with big enough buffer (This was actually why this was created, see: https://github.com/Amjad50/Emerald/pull/71 and https://github.com/Amjad50/Emerald/pull/72)
+- etc...
 
 See [the documentation](https://docs.rs/blinkcast) for examples.
 
@@ -35,3 +37,4 @@ The minimum supported Rust version for this crate is `1.61.0`
 
 # License
 Licensed under `MIT` ([LICENSE](./LICENSE) or http://opensource.org/licenses/MIT)
+
